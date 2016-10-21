@@ -11,6 +11,10 @@ body {
   margin: 0;
 }
 
+h1 {
+  padding-left: 20px;
+}
+
 .container {
   display: -webkit-box;
   display: -ms-flexbox;
