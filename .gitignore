@@ -5,7 +5,7 @@
 # node
 node_modules
 
-# config
+webgl-prog-book
 
 # build
 *.map
