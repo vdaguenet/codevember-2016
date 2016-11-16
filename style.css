@@ -34,9 +34,10 @@ h1 {
 
 .project {
   position: relative;
-  width: 20vw;
-  height: 20vw;
+  width: 14.12vw;
+  height: 14.12vw;
   background: black;
+  overflow: hidden;
 }
 
 .project a {
