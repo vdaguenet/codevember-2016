@@ -3,18 +3,16 @@ import ControlKit from 'controlkit';
 import mat4 from 'gl-mat4';
 import vec3 from 'gl-vec3';
 import mouse from './mouse';
-import { getWebGLContext, createProgram } from './webgl/utils';
-import Triangle from './webgl/Triangle';
-import Quad from './webgl/Quad';
-import Star from './webgl/Star';
+import Quad from './webgl/shapes/Quad';
+import WebglEngine from './webgl/Engine';
 
 /* ========================================================= *
  * Global
  * ========================================================= */
 const $canvas = document.querySelector('canvas');
 const params = {
-  shape: 'triangle',
-  shapesAvailables: ['triangle', 'star', 'quad'],
+  shape: 'quad',
+  shapesAvailables: ['quad'],
   tx: 0.0,
   ty: 0.0,
   tz: 0.0,
@@ -26,10 +24,14 @@ const params = {
   rx: 0.0,
   ry: 0.0,
   rz: 0.0,
-  rRange: [-Math.PI, Math.PI]
+  rRange: [-Math.PI, Math.PI],
+  blendMode: 'multiply',
+  blendModeAvailables: ['multiply', 'additive', 'substract', 'divide']
 };
-let shape;
+const engine = loop(update);
 let transformMatrix = mat4.identity([]);
+let shape;
+let imgLoadedCount = 0;
 
 /* ========================================================= *
  * Main
@@ -38,62 +40,27 @@ onResize();
 window.addEventListener('resize', onResize);
 document.addEventListener('mousemove', onMouseMove);
 
-// Get context
-const gl = getWebGLContext($canvas);
-// Bind shaders and create program
-const program = createProgram(gl, require('./shaders/main.vert'), require('./shaders/main.frag'));
-if (!program) {
-  console.error('Failed to create program');
-}
-gl.useProgram(program);
-gl.program = program;
-
-// Setup attributes
-const a_Position = gl.getAttribLocation(gl.program, 'a_Position');
-if (a_Position < 0) {
-  console.error('Failed to locate attribute a_Position');
-}
-
-const a_PointSize = gl.getAttribLocation(gl.program, 'a_PointSize');
-if (a_PointSize < 0) {
-  console.error('Failed to locate attribute a_PointSize');
-}
-gl.vertexAttrib1f(a_PointSize, 15.0);
-
-// Setup uniforms
-const u_FragColor = gl.getUniformLocation(gl.program, 'u_FragColor');
-gl.uniform4f(u_FragColor, 0.0, 1.0, 1.0, 1.0);
-const u_TransformMatrix = gl.getUniformLocation(gl.program, 'u_TransformMatrix');
+const webgl = new WebglEngine($canvas);
+webgl.initContext();
+webgl.initProgram();
+webgl.bindAttributes(['a_Position', 'a_TexCoord']);
+webgl.bindUniforms(['u_TransformMatrix', 'u_Sampler0', 'u_Sampler1', 'u_BlendMode']);
 setTransformMatrix();
-gl.uniformMatrix4fv(u_TransformMatrix, false, transformMatrix);
+webgl.gl.uniformMatrix4fv(webgl.uniforms['u_TransformMatrix'], false, transformMatrix);
+selectBlendMode();
+
+const texture0 = webgl.gl.createTexture();
+const texture1 = webgl.gl.createTexture();
+
+let image0 = new Image();
+image0.onload = () => { loadTexture(image0, texture0, 'u_Sampler0', 0); };
+image0.src = './assets/redflower.jpg';
+let image1 = new Image();
+image1.onload = () => { loadTexture(image1, texture1, 'u_Sampler1', 1); };
+image1.src = './assets/circle.gif';
 
 selectShape();
-
-// Set clear color
-gl.clearColor(0.0, 0.0, 0.0, 1.0);
-
-const engine = loop(update);
-
-const gui = new ControlKit();
-gui.addPanel()
-  .addSelect(params, 'shapesAvailables', {
-    target: 'shape',
-    onChange: selectShape
-  })
-  .addGroup({ label: 'Translation' })
-    .addSlider(params, 'tx', 'tRange')
-    .addSlider(params, 'ty', 'tRange')
-    .addSlider(params, 'tz', 'tRange')
-  .addGroup({ label: 'Scale' })
-    .addSlider(params, 'sx', 'sRange')
-    .addSlider(params, 'sy', 'sRange')
-    .addSlider(params, 'sz', 'sRange')
-  .addGroup({ label: 'Rotation' })
-    .addSlider(params, 'rx', 'rRange')
-    .addSlider(params, 'ry', 'rRange')
-    .addSlider(params, 'rz', 'rRange');
-
-engine.start();
+initGUI();
 
 /* ========================================================= *
  * Functions
@@ -109,14 +76,25 @@ function onMouseMove(e) {
 
 function selectShape() {
   switch (params.shape) {
-    case 'triangle':
-      shape = new Triangle(gl, a_Position);
-      break;
     case 'quad':
-      shape = new Quad(gl, a_Position);
+      shape = new Quad(webgl.gl, webgl.attributes['a_Position'], webgl.attributes['a_TexCoord']);
       break;
-    case 'star':
-      shape = new Star(gl, a_Position);
+  }
+}
+
+function selectBlendMode() {
+  switch (params.blendMode) {
+    case 'multiply':
+      webgl.gl.uniform1i(webgl.uniforms['u_BlendMode'], 0);
+      break;
+    case 'additive':
+      webgl.gl.uniform1i(webgl.uniforms['u_BlendMode'], 1);
+      break;
+    case 'substract':
+      webgl.gl.uniform1i(webgl.uniforms['u_BlendMode'], 2);
+      break;
+    case 'divide':
+      webgl.gl.uniform1i(webgl.uniforms['u_BlendMode'], 3);
       break;
   }
 }
@@ -134,10 +112,44 @@ function setTransformMatrix() {
 
 function update() {
   // Clear stage
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  webgl.clear();
   // Update
   setTransformMatrix();
-  gl.uniformMatrix4fv(u_TransformMatrix, false, transformMatrix);
+  webgl.gl.uniformMatrix4fv(webgl.uniforms['u_TransformMatrix'], false, transformMatrix);
   // Draw
-  gl.drawArrays(shape.drawMode, 0, shape.verticeCount);
+  webgl.gl.drawArrays(shape.drawMode, 0, shape.verticeCount);
+}
+
+function loadTexture(img, tex, uniform, i) {
+  webgl.loadTexture(tex, img, uniform, i);
+
+  imgLoadedCount++;
+  if (imgLoadedCount === 2) {
+    engine.start();
+  }
+}
+
+function initGUI() {
+  const gui = new ControlKit();
+  gui.addPanel()
+    // .addSelect(params, 'shapesAvailables', {
+    //   target: 'shape',
+    //   onChange: selectShape
+    // })
+    .addSelect(params, 'blendModeAvailables', {
+      target: 'blendMode',
+      onChange: selectBlendMode
+    })
+    .addGroup({ label: 'Translation' })
+      .addSlider(params, 'tx', 'tRange')
+      .addSlider(params, 'ty', 'tRange')
+      .addSlider(params, 'tz', 'tRange')
+    .addGroup({ label: 'Scale' })
+      .addSlider(params, 'sx', 'sRange')
+      .addSlider(params, 'sy', 'sRange')
+      .addSlider(params, 'sz', 'sRange')
+    .addGroup({ label: 'Rotation' })
+      .addSlider(params, 'rx', 'rRange')
+      .addSlider(params, 'ry', 'rRange')
+      .addSlider(params, 'rz', 'rRange');
 }

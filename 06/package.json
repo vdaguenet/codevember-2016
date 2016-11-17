@@ -4,7 +4,7 @@
   "description": "",
   "main": "build.js",
   "scripts": {
-    "start": "webpack -d --watch",
+    "start": "python -m SimpleHTTPServer & webpack -d --watch",
     "prod": "webpack -p --progress --optimize-minimize --optimize-dedupe"
   },
   "author": "Valentin Daguenet <valentin.daguenet@gmail.com> (http://vdaguenet.fr/)",
